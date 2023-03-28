@@ -8,3 +8,15 @@ html {
   font-size: 10px;
   font-family: "Open Sans", Arial, sans-serif;
 }
+
+.background {
+  position: absolute;
+  inset: 0;
+
+  padding: 0;
+  margin: 0;
+
+  background-image: url("https://media.tenor.com/7b6HGDt61nUAAAAC/magic-ball-remembrall.gif");
+  background-size: cover;
+  background-position: center;
+}
