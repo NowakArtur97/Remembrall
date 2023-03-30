@@ -61,6 +61,8 @@ html {
   text-align: center;
 
   transition: all 0.5s;
+
+  cursor: pointer;
 }
 
 .form__input:hover,
