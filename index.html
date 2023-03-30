@@ -12,21 +12,34 @@
     <div class="background background--darkening"></div>
     <form action="POST" class="form">
       <div class="form__element_wrapper">
-        <input type="text" name="message" id="message" class="form__input" />
+        <input
+          type="text"
+          name="message"
+          id="message"
+          required="required"
+          placeholder="Notification message"
+          class="form__input"
+        />
       </div>
       <div class="form__element_wrapper">
-        <input type="number" name="message" id="message" class="form__input" />
+        <input
+          type="number"
+          name="message"
+          id="message"
+          required="required"
+          class="form__input"
+        />
       </div>
-      <div class="form__element_wrapper">
+      <div class="form__element_wrapper form__element_wrapper--big">
         <div class="form__buttons_wrapper">
           <div class="form__button_wrapper">
-            <button class="form__button">Email notification</button>
+            <button class="form__button">Email</button>
           </div>
           <div class="form__button_wrapper">
-            <button class="form__button">SMS notification</button>
+            <button class="form__button">SMS</button>
           </div>
           <div class="form__button_wrapper">
-            <button class="form__button">Email & SMS notification</button>
+            <button class="form__button">Email & SMS</button>
           </div>
         </div>
       </div>
