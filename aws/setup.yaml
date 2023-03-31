@@ -1,0 +1,360 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Remembrall Template
+Resources:
+  WebsiteS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join
+        - "-"
+        - - "remembrall"
+          - !Select
+            - 0
+            - !Split
+              - "-"
+              - !Select
+                - 2
+                - !Split
+                  - "/"
+                  - !Ref "AWS::StackId"
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteS3Bucket
+      PolicyDocument:
+        Id: MyPolicy
+        Version: 2012-10-17
+        Statement:
+          - Sid: PublicReadForGetBucketObjects
+            Effect: Allow
+            Principal: "*"
+            Action: "s3:GetObject"
+            Resource: !Sub "arn:aws:s3:::${WebsiteS3Bucket}/*"
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: LambdaFunctionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Join
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - !Ref WebsiteS3Bucket
+                    - ""
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Join
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - !Ref WebsiteS3Bucket
+                    - "/*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Join
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - !Ref DependencyToS3Bucket
+                    - ""
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Join
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - !Ref DependencyToS3Bucket
+                    - "/*"
+  GithubToS3LambdaInvoke:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn:
+      - GithubToS3LambdaFunction
+      - DependencyToS3LambdaInvoke
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt GithubToS3LambdaFunction.Arn
+  GithubToS3LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.9
+      Timeout: 120
+      Handler: index.lambda_handler
+      Layers:
+        - !Ref PythonDependenciesLayer
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref WebsiteS3Bucket
+          REPOSITORY_URL: https://github.com/NowakArtur97/Remembrall
+          IGNORED_FILES_AND_FOLDERS: aws
+          IGNORED_EXTENSIONS: md
+          BRANCH: master
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import urllib.request
+          import boto3
+          import requests
+          from bs4 import BeautifulSoup
+          from urllib.parse import urlparse
+          import cfnresponse
+
+          WRAPPER_CLASS = 'Box mb-3'
+          ELEMENT_CLASS = 'Box-row Box-row--focus-gray py-2 d-flex position-relative js-navigation-item'
+          LINK_CLASS = 'Link--primary'
+          DIRECTORY_ICON_CLASS = 'octicon'
+
+          BUCKET = os.environ['BUCKET_NAME']
+          BRANCH = os.environ['BRANCH']
+          IGNORED_EXTENSIONS = os.environ['IGNORED_EXTENSIONS'].split(",")
+          IGNORED_FILES_AND_FOLDERS = os.environ['IGNORED_FILES_AND_FOLDERS'].split(",")
+
+          s3 = boto3.resource('s3')
+
+          def find_all_resources(url, nestedPath="", resources=[]):
+              page = requests.get(url)
+              soup = BeautifulSoup(page.content, 'html.parser')
+              wrapperElement = soup.find('div', class_=[WRAPPER_CLASS])
+              allFilesElements = wrapperElement.find_all('div', class_=ELEMENT_CLASS)
+              notIgnored = filter(lambda f: f.find('a', href=True, class_=LINK_CLASS).get_text() not in IGNORED_FILES_AND_FOLDERS, allFilesElements)
+              for element in notIgnored:
+                  isDirectory = element.find('svg', class_=DIRECTORY_ICON_CLASS)['aria-label'] == "Directory"
+                  resourceName = element.find('a', href=True, class_=LINK_CLASS).get_text()
+                  link = url + "/" + resourceName
+                  if isDirectory:
+                      if nestedPath == "":
+                          nestedResources = find_all_resources(link, resourceName, resources)
+                          flatten = flatten_list(nestedResources)
+                          resources.append(flatten)
+                      else:
+                          nestedResources = find_all_resources(link, nestedPath + "/" + resourceName, resources)
+                          flatten = flatten_list(nestedResources)
+                          resources.append(flatten)
+                  else:
+                      extension = link.rsplit('.', 1)[1]
+                      if extension in IGNORED_EXTENSIONS:
+                          continue
+                      contentType = resolve_content_type(extension)
+                      if nestedPath == "":
+                          resource = GithubResource(get_raw_url(link), contentType, resourceName)
+                          resources.append(resource)
+                      else:
+                          resource = GithubResource(get_raw_url(link), contentType, nestedPath + "/" + resourceName)
+                          resources.append(resource)
+
+              return flatten_list(resources)
+
+          def flatten_list(_2d_list):
+              flat_list = []
+              for element in _2d_list:
+                  if type(element) is list:
+                      for item in element:
+                          flat_list.append(item)
+                  else:
+                      flat_list.append(element)
+              return flat_list
+
+          def resolve_content_type(extension):
+              if extension == "html":
+                  return "text/html"
+              elif extension == "css":
+                  return "text/css"
+              elif extension == "js":
+                  return "text/javascript"
+              elif extension == "py":
+                  return "text/x-python"
+              elif extension in ["jpeg", "jpg"]:
+                  return "image/jpeg"
+              elif extension == "png":
+                  return "image/png"
+              elif extension == "tiff":
+                  return "image/tiff"
+              elif extension == "bmp":
+                  return "image/bmp"
+              elif extension == "gif":
+                  return "image/gif"
+              elif extension in ["svg", "xml"]:
+                  return "image/svg+xml"
+              elif extension in ["mp3", "wav", "ogg"]:
+                  return "audio/mpeg"
+              elif extension == "pdf":
+                  return "application/pdf"
+              elif extension == "zip":
+                  return "application/zip"
+              elif extension in ["yaml"]:
+                  return "binary/octet-stream"
+              else:
+                  return "text/plain"
+
+          def get_raw_url(url):
+              return url.replace("https://github.com", "https://raw.githubusercontent.com").replace("/tree/" + BRANCH +"/", "/" + BRANCH +"/")
+
+          def save_to_local(resource):
+              url = resource.url
+              urlPath = urlparse(url).path
+              fileName = os.path.basename(urlPath)
+              filePath = '/tmp/' + fileName
+              urllib.request.urlretrieve(url, filePath)
+              return filePath
+
+          def upload_to_s3(resource, filePath):
+              fileName = os.path.basename(filePath)
+              s3.Object(BUCKET, resource.key).put(Body=open(filePath, 'rb'), ContentType=resource.contentType)
+
+          def copy_to_s3(resource):
+              filePath = save_to_local(resource)
+              upload_to_s3(resource, filePath)
+
+          def clear_bucket():
+              s3.Bucket(BUCKET).objects.all().delete()
+
+          def lambda_handler(event, context):
+              responseData = {}
+              requestType = event['RequestType']
+              try:
+                  if requestType == 'Create':
+                      repositoryUrl = os.environ['REPOSITORY_URL'] + "/tree/" + BRANCH
+                      resources = find_all_resources(repositoryUrl)
+                      print(repositoryUrl)
+                      for resource in resources:
+                          print(resource.url)
+                          print(resource.contentType)
+                          print(resource.key)
+                      try:
+                          for resource in resources:
+                              copy_to_s3(resource)
+                      except Exception as e:
+                          print("Exception on copy")
+                          print(e)
+                          cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+                          return
+                  elif requestType == 'Delete':
+                      clear_bucket()
+                      print("Successfully cleared bucket: " + BUCKET)
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+              except Exception as e:
+                  print(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+
+          class GithubResource:
+            def __init__(self, url, contentType,  key):
+              self.url = url
+              self.contentType = contentType
+              self.key = key
+  PythonDependenciesLayer:
+    Type: "AWS::Lambda::LayerVersion"
+    DependsOn: DependencyToS3LambdaInvoke
+    Properties:
+      CompatibleRuntimes:
+        - python3.9
+      Content:
+        S3Bucket: !Ref DependencyToS3Bucket
+        S3Key: !Sub "dependencies.zip"
+      LayerName: "dependencies_layer"
+  DependencyToS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join
+        - "-"
+        - - "python-layer-dependency"
+          - !Select
+            - 0
+            - !Split
+              - "-"
+              - !Select
+                - 2
+                - !Split
+                  - "/"
+                  - !Ref "AWS::StackId"
+  DependencyToS3LambdaInvoke:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: DependencyToS3LambdaFunction
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt DependencyToS3LambdaFunction.Arn
+  DependencyToS3LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.9
+      Timeout: 30
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DependencyToS3Bucket
+          URL: https://raw.githubusercontent.com/NowakArtur97/Remembrall/master/aws/dependencies.zip
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import urllib.request
+          import boto3
+          from urllib.parse import urlparse
+          import cfnresponse
+
+          s3 = boto3.resource('s3')
+          BUCKET = os.environ['BUCKET_NAME']
+
+          def save_to_local(url):
+              urlPath = urlparse(url).path
+              fileName = os.path.basename(urlPath)
+              filePath = '/tmp/' + fileName
+              urllib.request.urlretrieve(url, filePath)
+              return filePath
+
+          def copy_to_s3(url):
+              filePath = save_to_local(url)
+              fileName = os.path.basename(filePath)
+              s3.meta.client.upload_file(filePath, BUCKET, fileName)
+              s3.Object(BUCKET, fileName).put(Body=open(filePath, 'rb'), ContentType="application/zip")
+
+          def clear_bucket():
+              s3.Bucket(BUCKET).objects.all().delete()
+
+          def lambda_handler(event, context):
+              responseData = {}
+              requestType = event['RequestType']
+              try:
+                  if requestType == 'Create':
+                      url = os.environ['URL']
+                      copy_to_s3(url)
+                      print("Successfully copied file from url: " + url + " to bucket: " + BUCKET)
+                  elif requestType == 'Delete':
+                      clear_bucket()
+                      print("Successfully cleared bucket: " + BUCKET)
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+              except Exception as e:
+                  print("Exception")
+                  print(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+Outputs:
+  WebsiteUrl:
+    Description: "Website Url"
+    Value: !GetAtt "WebsiteS3Bucket.WebsiteURL"
