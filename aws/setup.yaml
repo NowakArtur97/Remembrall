@@ -33,7 +33,17 @@ Resources:
             Principal: "*"
             Action: "s3:GetObject"
             Resource: !Sub "arn:aws:s3:::${WebsiteS3Bucket}/*"
-  LambdaFunctionRole:
+  PythonDependenciesLayer:
+    Type: "AWS::Lambda::LayerVersion"
+    DependsOn: DependencyToS3LambdaInvoke
+    Properties:
+      CompatibleRuntimes:
+        - python3.9
+      Content:
+        S3Bucket: !Ref DependencyToS3Bucket
+        S3Key: !Sub "dependencies.zip"
+      LayerName: "dependencies_layer"
+  GithubToS3LambdaRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -74,23 +84,6 @@ Resources:
                   - - "arn:aws:s3:::"
                     - !Ref WebsiteS3Bucket
                     - "/*"
-              - Effect: Allow
-                Action:
-                  - s3:ListBucket
-                Resource: !Join
-                  - ""
-                  - - "arn:aws:s3:::"
-                    - !Ref DependencyToS3Bucket
-                    - ""
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:DeleteObject
-                Resource: !Join
-                  - ""
-                  - - "arn:aws:s3:::"
-                    - !Ref DependencyToS3Bucket
-                    - "/*"
   GithubToS3LambdaInvoke:
     Type: AWS::CloudFormation::CustomResource
     DependsOn:
@@ -107,7 +100,7 @@ Resources:
       Handler: index.lambda_handler
       Layers:
         - !Ref PythonDependenciesLayer
-      Role: !GetAtt LambdaFunctionRole.Arn
+      Role: !GetAtt GithubToS3LambdaRole.Arn
       Environment:
         Variables:
           BUCKET_NAME: !Ref WebsiteS3Bucket
@@ -268,16 +261,6 @@ Resources:
               self.url = url
               self.contentType = contentType
               self.key = key
-  PythonDependenciesLayer:
-    Type: "AWS::Lambda::LayerVersion"
-    DependsOn: DependencyToS3LambdaInvoke
-    Properties:
-      CompatibleRuntimes:
-        - python3.9
-      Content:
-        S3Bucket: !Ref DependencyToS3Bucket
-        S3Key: !Sub "dependencies.zip"
-      LayerName: "dependencies_layer"
   DependencyToS3Bucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -293,6 +276,47 @@ Resources:
                 - !Split
                   - "/"
                   - !Ref "AWS::StackId"
+  DependencyToS3LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: LambdaFunctionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Join
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - !Ref DependencyToS3Bucket
+                    - ""
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Join
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - !Ref DependencyToS3Bucket
+                    - "/*"
   DependencyToS3LambdaInvoke:
     Type: AWS::CloudFormation::CustomResource
     DependsOn: DependencyToS3LambdaFunction
@@ -305,7 +329,7 @@ Resources:
       Runtime: python3.9
       Timeout: 30
       Handler: index.lambda_handler
-      Role: !GetAtt LambdaFunctionRole.Arn
+      Role: !GetAtt DependencyToS3LambdaRole.Arn
       Environment:
         Variables:
           BUCKET_NAME: !Ref DependencyToS3Bucket
