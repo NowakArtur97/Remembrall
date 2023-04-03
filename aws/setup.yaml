@@ -1,6 +1,123 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Remembrall Template
 Resources:
+  DependencyToS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Join
+        - "-"
+        - - "python-layer-dependency"
+          - !Select
+            - 0
+            - !Split
+              - "-"
+              - !Select
+                - 2
+                - !Split
+                  - "/"
+                  - !Ref "AWS::StackId"
+  DependencyToS3LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: LambdaFunctionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Join
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - !Ref DependencyToS3Bucket
+                    - ""
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Join
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - !Ref DependencyToS3Bucket
+                    - "/*"
+  DependencyToS3LambdaInvoke:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: DependencyToS3LambdaFunction
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt DependencyToS3LambdaFunction.Arn
+  DependencyToS3LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.9
+      Timeout: 30
+      Handler: index.lambda_handler
+      Role: !GetAtt DependencyToS3LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DependencyToS3Bucket
+          URL: https://raw.githubusercontent.com/NowakArtur97/Remembrall/master/aws/dependencies.zip
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import urllib.request
+          import boto3
+          from urllib.parse import urlparse
+          import cfnresponse
+
+          s3 = boto3.resource('s3')
+          BUCKET = os.environ['BUCKET_NAME']
+
+          def save_to_local(url):
+              urlPath = urlparse(url).path
+              fileName = os.path.basename(urlPath)
+              filePath = '/tmp/' + fileName
+              urllib.request.urlretrieve(url, filePath)
+              return filePath
+
+          def copy_to_s3(url):
+              filePath = save_to_local(url)
+              fileName = os.path.basename(filePath)
+              s3.meta.client.upload_file(filePath, BUCKET, fileName)
+              s3.Object(BUCKET, fileName).put(Body=open(filePath, 'rb'), ContentType="application/zip")
+
+          def clear_bucket():
+              s3.Bucket(BUCKET).objects.all().delete()
+
+          def lambda_handler(event, context):
+              responseData = {}
+              requestType = event['RequestType']
+              try:
+                  if requestType == 'Create':
+                      url = os.environ['URL']
+                      copy_to_s3(url)
+                      print("Successfully copied file from url: " + url + " to bucket: " + BUCKET)
+                  elif requestType == 'Delete':
+                      clear_bucket()
+                      print("Successfully cleared bucket: " + BUCKET)
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+              except Exception as e:
+                  print("Exception")
+                  print(e)
+                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
   WebsiteS3Bucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -261,22 +378,7 @@ Resources:
               self.url = url
               self.contentType = contentType
               self.key = key
-  DependencyToS3Bucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Join
-        - "-"
-        - - "python-layer-dependency"
-          - !Select
-            - 0
-            - !Split
-              - "-"
-              - !Select
-                - 2
-                - !Split
-                  - "/"
-                  - !Ref "AWS::StackId"
-  DependencyToS3LambdaRole:
+  ApiGatewayToStateMachineLambdaRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -300,84 +402,19 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "*"
-              - Effect: Allow
-                Action:
-                  - s3:ListBucket
-                Resource: !Join
-                  - ""
-                  - - "arn:aws:s3:::"
-                    - !Ref DependencyToS3Bucket
-                    - ""
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                  - s3:DeleteObject
-                Resource: !Join
-                  - ""
-                  - - "arn:aws:s3:::"
-                    - !Ref DependencyToS3Bucket
-                    - "/*"
-  DependencyToS3LambdaInvoke:
-    Type: AWS::CloudFormation::CustomResource
-    DependsOn: DependencyToS3LambdaFunction
-    Version: "1.0"
-    Properties:
-      ServiceToken: !GetAtt DependencyToS3LambdaFunction.Arn
-  DependencyToS3LambdaFunction:
+  ApiGatewayToStateMachineLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       Runtime: python3.9
       Timeout: 30
       Handler: index.lambda_handler
-      Role: !GetAtt DependencyToS3LambdaRole.Arn
-      Environment:
-        Variables:
-          BUCKET_NAME: !Ref DependencyToS3Bucket
-          URL: https://raw.githubusercontent.com/NowakArtur97/Remembrall/master/aws/dependencies.zip
+      Role: !GetAtt ApiGatewayToStateMachineLambdaRole.Arn
       Code:
         ZipFile: |
-          import os
-          import json
-          import urllib.request
-          import boto3
-          from urllib.parse import urlparse
-          import cfnresponse
-
-          s3 = boto3.resource('s3')
-          BUCKET = os.environ['BUCKET_NAME']
-
-          def save_to_local(url):
-              urlPath = urlparse(url).path
-              fileName = os.path.basename(urlPath)
-              filePath = '/tmp/' + fileName
-              urllib.request.urlretrieve(url, filePath)
-              return filePath
-
-          def copy_to_s3(url):
-              filePath = save_to_local(url)
-              fileName = os.path.basename(filePath)
-              s3.meta.client.upload_file(filePath, BUCKET, fileName)
-              s3.Object(BUCKET, fileName).put(Body=open(filePath, 'rb'), ContentType="application/zip")
-
-          def clear_bucket():
-              s3.Bucket(BUCKET).objects.all().delete()
+          import boto3, json, os, decimal
 
           def lambda_handler(event, context):
-              responseData = {}
-              requestType = event['RequestType']
-              try:
-                  if requestType == 'Create':
-                      url = os.environ['URL']
-                      copy_to_s3(url)
-                      print("Successfully copied file from url: " + url + " to bucket: " + BUCKET)
-                  elif requestType == 'Delete':
-                      clear_bucket()
-                      print("Successfully cleared bucket: " + BUCKET)
-                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
-              except Exception as e:
-                  print("Exception")
-                  print(e)
-                  cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+              print(json.loads(event['body']))
 Outputs:
   WebsiteUrl:
     Description: "Website Url"
