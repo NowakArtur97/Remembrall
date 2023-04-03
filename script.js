@@ -3,11 +3,13 @@ const API_GATEWAY = "API_ENDPOINT/remembrall";
 let messageInput;
 let timeDelayInput;
 let notificationOptionButtons;
+let form;
 
 document.addEventListener("DOMContentLoaded", () => {
   messageInput = document.querySelector("#message");
   timeDelayInput = document.querySelector('input[name="time_delay"]');
   notificationOptionButtons = document.querySelectorAll(".form__button");
+  form = document.querySelector(".form");
 
   timeDelayInput.addEventListener("change", validateDelayTime());
   notificationOptionButtons.forEach((button) =>
@@ -30,6 +32,10 @@ function validateDelayTime() {
 
 function sendData(e, notificationType) {
   e.preventDefault();
+  form.reportValidity();
+  if (!form.checkValidity()) {
+    return;
+  }
   const body = JSON.stringify({
     message: messageInput.value,
     timeDelay: timeDelayInput.value,
@@ -46,12 +52,12 @@ function sendData(e, notificationType) {
     mode: "cors",
   })
     .then((resp) => resp.json())
-    .then((data) => {
-      alert(`Submitted. Result: ${JSON.stringify(data)}`);
-    })
-    .catch((err) => {
-      alert(`Error: ${err.toString()}`);
-    });
+    .then((data) =>
+      alert(
+        `The request was submitted with the result: ${JSON.stringify(data)}`
+      )
+    )
+    .catch((err) => alert(`The request failed: ${err.toString()}`));
   clearForm();
 }
 
