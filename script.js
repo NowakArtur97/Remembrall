@@ -1,4 +1,5 @@
-const API_GATEWAY = "API_ENDPOINT/remembrall";
+const API_GATEWAY = "";
+const API = `${API_GATEWAY}/remembrall`;
 
 let messageInput;
 let timeDelayInput;
@@ -42,22 +43,21 @@ function sendData(e, notificationType) {
     option: notificationType,
   });
   console.log(body);
-  console.log(API_GATEWAY);
-  fetch(API_GATEWAY, {
+  console.log(API);
+  fetch(API, {
     headers: {
       "Content-type": "application/json",
     },
     method: "POST",
     body,
-    mode: "cors",
-  })
-    .then((resp) => resp.json())
-    .then((data) =>
-      alert(
-        `The request was submitted with the result: ${JSON.stringify(data)}`
-      )
-    )
-    .catch((err) => alert(`The request failed: ${err.toString()}`));
+    mode: "no-cors",
+  }).then((resp) => console.log(resp));
+  // .then((data) =>
+  //   alert(
+  //     `The request was submitted with the result: ${JSON.stringify(data)}`
+  //   )
+  // )
+  // .catch((err) => alert(`The request failed: ${err.toString()}`));
   clearForm();
 }
 
