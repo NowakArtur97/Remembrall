@@ -8,9 +8,6 @@ Parameters:
     Type: String
     AllowedPattern: "[a-z0-9]+"
     Default: prod
-  APIGatewayHTTPMethod:
-    Type: String
-    Default: POST
 Resources:
   DependencyToS3Bucket:
     Type: AWS::S3::Bucket
@@ -389,33 +386,9 @@ Resources:
               self.url = url
               self.contentType = contentType
               self.key = key
-  ApiGatewayRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: ""
-            Effect: "Allow"
-            Principal:
-              Service:
-                - "apigateway.amazonaws.com"
-            Action:
-              - "sts:AssumeRole"
-      Path: "/"
-      Policies:
-        - PolicyName: LambdaAccess
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action: "lambda:*"
-                Resource: !GetAtt ApiGatewayToStateMachineLambdaFunction.Arn
   ApiGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
-    DependsOn:
-      - ApiGatewayPostMethod
-      - ApiGatewayOptionsMethod
+    DependsOn: ApiGatewayMethod
     Properties:
       RestApiId: !Ref ApiGatewayRestApi
       Description: Remembrall API Deployment
@@ -432,9 +405,6 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !GetAtt ApiGatewayToStateMachineLambdaFunction.Arn
       Principal: apigateway.amazonaws.com
-      # note: if route *not* at API Gateway root, `SourceArn` would take the form of:
-      # SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/${APIGatewayStageName}/${APIGatewayHTTPMethod}/remembrall
-      # # SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGatewayRestApi}/${APIGatewayStageName}/${APIGatewayHTTPMethod}/
   ApiGatewayRestApi:
     Type: AWS::ApiGateway::RestApi
     Properties:
@@ -449,7 +419,7 @@ Resources:
       ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
       PathPart: remembrall
       RestApiId: !Ref ApiGatewayRestApi
-  ApiGatewayPostMethod:
+  ApiGatewayMethod:
     Type: AWS::ApiGateway::Method
     Properties:
       ResourceId: !Ref ApiGatewayResource
@@ -457,62 +427,14 @@ Resources:
       OperationName: "remembrall"
       AuthorizationType: NONE
       ApiKeyRequired: false
-      HttpMethod: !Ref APIGatewayHTTPMethod
-      MethodResponses:
-        - StatusCode: 200
-          ResponseParameters:
-            method.response.header.Access-Control-Allow-Headers: false
-            method.response.header.Access-Control-Allow-Methods: false
-            method.response.header.Access-Control-Allow-Origin: false
-        - StatusCode: 400
-          ResponseParameters:
-            method.response.header.Access-Control-Allow-Headers: false
-            method.response.header.Access-Control-Allow-Methods: false
-            method.response.header.Access-Control-Allow-Origin: false
+      HttpMethod: POST
       Integration:
         Type: AWS_PROXY
         IntegrationHttpMethod: POST
         PassthroughBehavior: WHEN_NO_MATCH
-        # ConnectionType: INTERNET
-        # Credentials: !GetAtt ApiGatewayRole.Arn
-        IntegrationResponses:
-          - StatusCode: 200
-            ResponseParameters:
-              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
-              method.response.header.Access-Control-Allow-Origin: "'*'"
-          - StatusCode: 400
-            ResponseParameters:
-              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
-              method.response.header.Access-Control-Allow-Origin: "'*'"
         Uri: !Sub
           - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations
           - lambdaArn: !GetAtt ApiGatewayToStateMachineLambdaFunction.Arn
-  ApiGatewayOptionsMethod:
-    Type: AWS::ApiGateway::Method
-    Properties:
-      ResourceId: !Ref ApiGatewayResource
-      RestApiId: !Ref ApiGatewayRestApi
-      OperationName: "remembrall"
-      AuthorizationType: NONE
-      ApiKeyRequired: false
-      HttpMethod: OPTIONS
-      MethodResponses:
-        - StatusCode: 200
-          ResponseParameters:
-            method.response.header.Access-Control-Allow-Headers: false
-            method.response.header.Access-Control-Allow-Methods: false
-            method.response.header.Access-Control-Allow-Origin: false
-      Integration:
-        Type: MOCK
-        PassthroughBehavior: WHEN_NO_MATCH
-        IntegrationResponses:
-          - StatusCode: 200
-            ResponseParameters:
-              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-              method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
-              method.response.header.Access-Control-Allow-Origin: "'*'"
   ApiGatewayToStateMachineLambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -559,30 +481,18 @@ Resources:
               if False in checks:
                   response = {
                       "statusCode": 400,
-                      "headers": {
-                          'Access-Control-Allow-Headers': 'Content-Type',
-                          'Access-Control-Allow-Origin':'*',
-                          'Access-Control-Allow-Methods': 'POST',
-                          'Access-Control-Allow-Credentials': 'true',
-                          'Content-Type': 'application/json'
-                      },
                       "body": json.dumps( { "Status": "Success", "Reason": "Input failed validation" } )
                   }
               else: 
                   response = {
                       "statusCode": 200,
-                      "headers": {
-                          'Access-Control-Allow-Headers': 'Content-Type',
-                          'Access-Control-Allow-Origin':'*',
-                          'Access-Control-Allow-Methods': 'POST',
-                          'Access-Control-Allow-Credentials': 'true',
-                          'Content-Type': 'application/json'
-                      },
                       "body": json.dumps( {"Status": "Success"} )
                   }
               return response
-
-# Outputs:
-#   WebsiteUrl:
-#     Description: "Website Url"
-#     Value: !GetAtt "WebsiteS3Bucket.WebsiteURL"
+Outputs:
+  WebsiteUrl:
+    Description: Website Url
+    Value: !GetAtt WebsiteS3Bucket.WebsiteURL
+  APIGatewayEndpoint:
+    Description: API Prod stage endpoint
+    Value: !Sub https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${APIGatewayStageName}

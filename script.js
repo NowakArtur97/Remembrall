@@ -1,4 +1,4 @@
-const API_GATEWAY = "";
+const API_GATEWAY = "API_GATEWAY_URL";
 const API = `${API_GATEWAY}/remembrall`;
 
 let messageInput;
@@ -42,6 +42,7 @@ function sendData(e, notificationType) {
     timeDelay: timeDelayInput.value,
     option: notificationType,
   });
+  clearForm();
   console.log(body);
   console.log(API);
   fetch(API, {
@@ -51,18 +52,12 @@ function sendData(e, notificationType) {
     method: "POST",
     body,
     mode: "no-cors",
-  }).then((resp) => console.log(resp));
-  // .then((data) =>
-  //   alert(
-  //     `The request was submitted with the result: ${JSON.stringify(data)}`
-  //   )
-  // )
-  // .catch((err) => alert(`The request failed: ${err.toString()}`));
-  clearForm();
+  })
+    .then((resp) => console.log(resp))
+    .catch((err) => console.log(err.toString()));
 }
 
 function clearForm() {
-  messageInput.value = "";
-  timeDelayInput.value = "0";
-  notificationOptionButtons.forEach((button) => (button.value = "0"));
+  messageInput.value = "Notification message";
+  timeDelayInput.value = "15";
 }
