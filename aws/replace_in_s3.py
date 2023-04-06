@@ -1,4 +1,6 @@
-import os, cfnresponse, boto3
+import os
+import cfnresponse
+import boto3
 
 FILE_NAME = os.environ['FILE_NAME']
 BUCKET_NAME = os.environ['BUCKET_NAME']
@@ -22,7 +24,8 @@ def reaplce_values_in_file(filedata):
     for index, toReplace in enumerate(VALUES_TO_REPLACE):
       toBeReplaced = VALUES_TO_BE_REPLACED[index]
       filedata = filedata.replace(toReplace, toBeReplaced)
-      print("Chaned value from: " + toReplace + " to: " + toBeReplaced)
+      print("Changed value from: " + toReplace + " to: " + toBeReplaced)
+    return filedata
 
 def save_new_values_to_file(filedata):
     with open(TMP_FILE_PATH, 'w') as file:
@@ -33,12 +36,14 @@ def upload_updated_file_to_s3():
 
 def lambda_handler(event, context):
     responseData = {}
+    requestType = event['RequestType']
     try:
-      download_file()
-      filedata = read_file()
-      reaplce_values_in_file(filedata)
-      save_new_values_to_file(filedata)
-      upload_updated_file_to_s3()
+      if requestType == 'Create':
+        download_file()
+        filedata = read_file()
+        filedata = reaplce_values_in_file(filedata)
+        save_new_values_to_file(filedata)
+        upload_updated_file_to_s3()
       cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
     except Exception as e:
       print(e)
