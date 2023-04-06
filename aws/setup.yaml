@@ -489,6 +489,107 @@ Resources:
                       "body": json.dumps( {"Status": "Success"} )
                   }
               return response
+  ReplaceInS3LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: LambdaFunctionPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Join
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - !Ref WebsiteS3Bucket
+                    - "/*"
+  ReplaceInS3LambdaInvoke:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn:
+      - GithubToS3LambdaInvoke
+      - ReplaceInS3LambdaFunction
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt ReplaceInS3LambdaFunction.Arn
+  ReplaceInS3LambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: ApiGatewayRestApi
+    Properties:
+      Runtime: python3.9
+      Timeout: 60
+      Handler: index.lambda_handler
+      Role: !GetAtt ReplaceInS3LambdaRole.Arn
+      Environment:
+        Variables:
+          FILE_NAME: script.js
+          BUCKET_NAME: !Ref WebsiteS3Bucket
+          VALUES_TO_REPLACE: API_GATEWAY_URL
+          VALUES_TO_BE_REPLACED: !Sub https://${ApiGatewayRestApi}.execute-api.${AWS::Region}.amazonaws.com/${APIGatewayStageName}
+      Code:
+        ZipFile: |
+          import os, cfnresponse, boto3
+
+          FILE_NAME = os.environ['FILE_NAME']
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+          VALUES_TO_REPLACE = os.environ['VALUES_TO_REPLACE'].split(",")
+          VALUES_TO_BE_REPLACED = os.environ['VALUES_TO_BE_REPLACED'].split(",")
+
+          TMP_FILE_PATH = '/tmp/' + FILE_NAME
+
+          s3 = boto3.resource('s3')
+
+          def download_file():
+            BUCKET = s3.Bucket(BUCKET_NAME)
+            BUCKET.download_file(FILE_NAME, TMP_FILE_PATH)
+
+          def read_file():
+              with open(TMP_FILE_PATH, 'r') as file:
+                filedata = file.read()
+              return filedata
+
+          def reaplce_values_in_file(filedata):
+              for index, toReplace in enumerate(VALUES_TO_REPLACE):
+                toBeReplaced = VALUES_TO_BE_REPLACED[index]
+                filedata = filedata.replace(toReplace, toBeReplaced)
+                print("Chaned value from: " + toReplace + " to: " + toBeReplaced)
+
+          def save_new_values_to_file(filedata):
+              with open(TMP_FILE_PATH, 'w') as file:
+                file.write(filedata)
+
+          def upload_updated_file_to_s3():
+              s3.Object(BUCKET_NAME, FILE_NAME).put(Body=open(TMP_FILE_PATH, 'rb').read())
+
+          def lambda_handler(event, context):
+              responseData = {}
+              try:
+                download_file()
+                filedata = read_file()
+                reaplce_values_in_file(filedata)
+                save_new_values_to_file(filedata)
+                upload_updated_file_to_s3()
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+              except Exception as e:
+                print(e)
+                cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
 Outputs:
   WebsiteUrl:
     Description: Website Url

@@ -1,4 +1,4 @@
-import os, cfnresponse, boto3, urllib
+import os, cfnresponse, boto3
 
 FILE_NAME = os.environ['FILE_NAME']
 BUCKET_NAME = os.environ['BUCKET_NAME']
@@ -32,8 +32,14 @@ def upload_updated_file_to_s3():
     s3.Object(BUCKET_NAME, FILE_NAME).put(Body=open(TMP_FILE_PATH, 'rb').read())
 
 def lambda_handler(event, context):
-    download_file()
-    filedata = read_file()
-    reaplce_values_in_file(filedata)
-    save_new_values_to_file(filedata)
-    upload_updated_file_to_s3()
+    responseData = {}
+    try:
+      download_file()
+      filedata = read_file()
+      reaplce_values_in_file(filedata)
+      save_new_values_to_file(filedata)
+      upload_updated_file_to_s3()
+      cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+    except Exception as e:
+      print(e)
+      cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
