@@ -18,7 +18,6 @@ def send_email(input):
     )
     print('Message: [' + message + '] sent successfully to: ' + recipient)
 
-
 def lambda_handler(event, context):
     attachment = {}
     print("Received event: " + json.dumps(event))
