@@ -6,13 +6,13 @@ EMAIL_SUBJECT = os.environ["EMAIL_SUBJECT"]
 ses = boto3.client("ses")
 
 def send_email(input):
-    recipient = event["Input"]["email"]
-    message = event["Input"]["message"]
+    recipient = input["email"]
+    message = input["message"]
     ses.send_email(
         Source=SENDER,
         Destination={"ToAddresses": [recipient]},
         Message={
-            "Subject": {EMAIL_SUBJECT},
+            "Subject": {"Data": EMAIL_SUBJECT},
             "Body": {"Text": {"Data": message}},
         },
     )
