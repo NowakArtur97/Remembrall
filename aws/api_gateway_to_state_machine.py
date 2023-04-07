@@ -1,13 +1,19 @@
 import boto3, json, os
 
-def lambda_handler(event, context):
-    print(json.loads(event['body']))
-    data = json.loads(event['body'])
-    data['timeDelay'] = int(data['timeDelay'])
+def validateData(data):
     checks = []
     checks.append('message' in data)
     checks.append(type(data['timeDelay']) == int)
     checks.append('option' in data)
+    if data['option'] == 'email':
+        checks.append(data['email'] != "")
+    return checks
+
+def lambda_handler(event, context):
+    print("Received request: " + json.loads(event['body']))
+    data = json.loads(event['body'])
+    data['timeDelay'] = int(data['timeDelay'])
+    checks = validateData(data)
     if False in checks:
         response = {
             "statusCode": 400,
