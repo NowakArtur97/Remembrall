@@ -1,6 +1,14 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Remembrall Template
 Parameters:
+  EmailSender:
+    Type: String
+    Description: Email address of the person sending the notification emails
+    Default: email@email.com
+  EmailSubject:
+    Type: String
+    Description: Notification email subject
+    Default: Notification
   APIGatewayName:
     Type: String
     Default: remembrall-api
@@ -595,6 +603,72 @@ Resources:
               except Exception as e:
                 print(e)
                 cfnresponse.send(event, context, cfnresponse.FAILED, responseData)
+  EmailSenderLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: !Sub "${AWS::Region}-EmailSenderLambdaRole"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                Resource: "*"
+  EmailSenderLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.9
+      Timeout: 30
+      Handler: index.lambda_handler
+      Role: !GetAtt EmailSenderLambdaRole.Arn
+      Environment:
+        Variables:
+          SENDER: !Ref EmailSender
+          EMAIL_SUBJECT: !Ref EmailSubject
+      Code:
+        ZipFile: |
+          import boto3, os, json
+
+          SENDER = os.environ["SENDER"]
+          EMAIL_SUBJECT = os.environ["EMAIL_SUBJECT"]
+
+          ses = boto3.client("ses")
+
+          def send_email(input):
+              recipient = event["Input"]["email"]
+              message = event["Input"]["message"]
+              ses.send_email(
+                  Source=SENDER,
+                  Destination={"ToAddresses": [recipient]},
+                  Message={
+                      "Subject": {EMAIL_SUBJECT},
+                      "Body": {"Text": {"Data": message}},
+                  },
+              )
+              print('Message: [' + message + '] sent successfully to: ' + recipient)
+
+
+          def lambda_handler(event, context):
+              attachment = {}
+              print("Received event: " + json.dumps(event))
+              try:
+                  input = event["Input"]
+                  send_email(input)
+                  return "Success"
+              except Exception as e:
+                  print("Exception when sending email")
+                  print(e)
+                  return "Fail"
 Outputs:
   WebsiteUrl:
     Description: Website Url

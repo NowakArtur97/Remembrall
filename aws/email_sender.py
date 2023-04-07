@@ -27,6 +27,6 @@ def lambda_handler(event, context):
         send_email(input)
         return "Success"
     except Exception as e:
-        print("Exception when sending reports")
+        print("Exception when sending email")
         print(e)
         return "Fail"
