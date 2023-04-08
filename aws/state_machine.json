@@ -1,0 +1,101 @@
+{
+  "Comment": "Remembrall-StateMachine",
+  "StartAt": "WaitState",
+  "States": {
+    "WaitState": {
+      "Type": "Wait",
+      "Next": "ChoiceState",
+      "SecondsPath": "$.timeDelay"
+    },
+    "ChoiceState": {
+      "Type": "Choice",
+      "Default": "FailState",
+      "Choices": [
+        {
+          "Next": "EmailOnlyState",
+          "Variable": "$.preference",
+          "StringEquals": "email"
+        },
+        {
+          "Next": "SMSOnlyState",
+          "Variable": "$.preference",
+          "StringEquals": "sms"
+        },
+        {
+          "Next": "EmailAndSMSState",
+          "Variable": "$.preference",
+          "StringEquals": "both"
+        }
+      ]
+    },
+    "EmailOnlyState": {
+      "Type": "Task",
+      "Next": "EndState",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "",
+        "Payload": {
+          "Input.$": "$"
+        }
+      }
+    },
+    "SMSOnlyState": {
+      "Type": "Task",
+      "Next": "EndState",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "Message": {
+          "Input.$": "$.message"
+        },
+        "PhoneNumber": "+"
+      }
+    },
+    "EmailAndSMSState": {
+      "Type": "Parallel",
+      "Next": "EndState",
+      "Branches": [
+        {
+          "StartAt": "ParallelEmailState",
+          "States": {
+            "ParallelEmailState": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "Payload": {
+                  "Input.$": "$"
+                },
+                "FunctionName": ""
+              },
+              "End": true
+            }
+          }
+        },
+        {
+          "StartAt": "ParallelSMSState",
+          "States": {
+            "ParallelSMSState": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "Message": {
+                  "Input.$": "$.message"
+                },
+                "PhoneNumber": "+"
+              },
+              "End": true
+            }
+          }
+        }
+      ]
+    },
+    "FailState": {
+      "Type": "Fail",
+      "Error": "DefaultStateError",
+      "Cause": "No state to select"
+    },
+    "EndState": {
+      "Type": "Pass",
+      "End": true
+    }
+  }
+}
