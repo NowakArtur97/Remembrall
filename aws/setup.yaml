@@ -46,16 +46,10 @@ Resources:
               - sts:AssumeRole
       Path: "/"
       Policies:
-        - PolicyName: LambdaFunctionPolicy
+        - PolicyName: BucketPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: "*"
               - Effect: Allow
                 Action:
                   - s3:ListBucket
@@ -73,6 +67,16 @@ Resources:
                   - - "arn:aws:s3:::"
                     - !Ref DependencyToS3Bucket
                     - "/*"
+        - PolicyName: LogPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
   DependencyToS3LambdaInvoke:
     Type: AWS::CloudFormation::CustomResource
     DependsOn: DependencyToS3LambdaFunction
@@ -190,16 +194,10 @@ Resources:
               - sts:AssumeRole
       Path: "/"
       Policies:
-        - PolicyName: LambdaFunctionPolicy
+        - PolicyName: BucketPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogGroup
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: "*"
               - Effect: Allow
                 Action:
                   - s3:ListBucket
@@ -217,6 +215,16 @@ Resources:
                   - - "arn:aws:s3:::"
                     - !Ref WebsiteS3Bucket
                     - "/*"
+        - PolicyName: LogPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
   GithubToS3LambdaInvoke:
     Type: AWS::CloudFormation::CustomResource
     DependsOn:
@@ -457,7 +465,15 @@ Resources:
               - sts:AssumeRole
       Path: "/"
       Policies:
-        - PolicyName: LambdaFunctionPolicy
+        - PolicyName: StateMachinePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: !GetAtt StateMachine.Arn
+        - PolicyName: LogPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -469,22 +485,31 @@ Resources:
                 Resource: "*"
   ApiGatewayToStateMachineLambdaFunction:
     Type: AWS::Lambda::Function
+    DependsOn: StateMachine
     Properties:
       Runtime: python3.9
       Timeout: 30
       Handler: index.lambda_handler
       Role: !GetAtt ApiGatewayToStateMachineLambdaRole.Arn
+      Environment:
+        Variables:
+          STATE_MACHINE_ARN: !GetAtt StateMachine.Arn
       Code:
         ZipFile: |
           import boto3, json, os
+
+          sm = boto3.client('stepfunctions')
+          STATE_MACHINE_ARN = os.environ["STATE_MACHINE_ARN"]
 
           def validateData(data):
               checks = []
               checks.append('message' in data)
               checks.append(type(data['timeDelay']) == int)
-              checks.append('option' in data)
-              if data['option'] in ['email', 'both']:
+              checks.append('notificationType' in data)
+              if data['notificationType'] in ['email', 'both']:
                   checks.append(data['email'] != "")
+              if data['notificationType'] in ['sms', 'both']:
+                  checks.append(data['phoneNumber'] != "")
               return checks
 
           def lambda_handler(event, context):
@@ -500,6 +525,7 @@ Resources:
                       "body": json.dumps( { "Status": "Success", "Reason": "Input failed validation" } )
                   }
               else:
+                  sm.start_execution(stateMachineArn=STATE_MACHINE_ARN, input=json.dumps(data))
                   response = {
                       "statusCode": 200,
                       "body": json.dumps( {"Status": "Success"} )
@@ -519,7 +545,19 @@ Resources:
               - sts:AssumeRole
       Path: "/"
       Policies:
-        - PolicyName: LambdaFunctionPolicy
+        - PolicyName: BucketPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Join
+                  - ""
+                  - - "arn:aws:s3:::"
+                    - !Ref WebsiteS3Bucket
+                    - "/*"
+        - PolicyName: LogPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -529,14 +567,6 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "*"
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                Resource: !Join
-                  - ""
-                  - - "arn:aws:s3:::"
-                    - !Ref WebsiteS3Bucket
-                    - "/*"
   ReplaceInS3LambdaInvoke:
     Type: AWS::CloudFormation::CustomResource
     DependsOn:
@@ -624,7 +654,7 @@ Resources:
               - sts:AssumeRole
       Path: "/"
       Policies:
-        - PolicyName: !Sub "${AWS::Region}-EmailSenderLambdaRole"
+        - PolicyName: SESPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -688,7 +718,7 @@ Resources:
               Service:
                 - states.amazonaws.com
       Policies:
-        - PolicyName: InvokeTaskFunctions
+        - PolicyName: StateMachinePolicy
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -713,6 +743,125 @@ Resources:
                   - logs:DescribeResourcePolicies
                   - logs:DescribeLogGroups
                 Resource: "*"
+  StateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    DependsOn: EmailSenderLambdaFunction
+    Properties:
+      DefinitionString: !Sub |
+        {
+          "Comment": "Remembrall-StateMachine",
+          "StartAt": "WaitState",
+          "States": {
+            "WaitState": {
+              "Type": "Wait",
+              "Next": "ChoiceState",
+              "SecondsPath": "$.timeDelay"
+            },
+            "ChoiceState": {
+              "Type": "Choice",
+              "Default": "FailState",
+              "Choices": [
+                {
+                  "Next": "EmailOnlyState",
+                  "Variable": "$.notificationType",
+                  "StringEquals": "email"
+                },
+                {
+                  "Next": "SMSOnlyState",
+                  "Variable": "$.notificationType",
+                  "StringEquals": "sms"
+                },
+                {
+                  "Next": "EmailAndSMSState",
+                  "Variable": "$.notificationType",
+                  "StringEquals": "both"
+                }
+              ]
+            },
+            "EmailOnlyState": {
+              "Type": "Task",
+              "Next": "EndState",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${EmailSenderLambdaFunction.Arn}",
+                "Payload": {
+                  "Input.$": "$"
+                }
+              }
+            },
+            "SMSOnlyState": {
+              "Type": "Task",
+              "Next": "EndState",
+              "Resource": "arn:aws:states:::sns:publish",
+              "Parameters": {
+                "Message": {
+                  "Input.$": "$.message"
+                },
+                "PhoneNumber": "$.phoneNumber"
+              }
+            },
+            "EmailAndSMSState": {
+              "Type": "Parallel",
+              "Next": "EndState",
+              "Branches": [
+                {
+                  "StartAt": "ParallelEmailState",
+                  "States": {
+                    "ParallelEmailState": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Parameters": {
+                        "Payload": {
+                          "Input.$": "$"
+                        },
+                        "FunctionName": "${EmailSenderLambdaFunction.Arn}"
+                      },
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "StartAt": "ParallelSMSState",
+                  "States": {
+                    "ParallelSMSState": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::sns:publish",
+                      "Parameters": {
+                        "Message": {
+                          "Input.$": "$.message"
+                        },
+                        "PhoneNumber": "$.phoneNumber"
+                      },
+                      "End": true
+                    }
+                  }
+                }
+              ]
+            },
+            "FailState": {
+              "Type": "Fail",
+              "Error": "DefaultStateError",
+              "Cause": "No state to select"
+            },
+            "EndState": {
+              "Type": "Pass",
+              "End": true
+            }
+          }
+        }
+      LoggingConfiguration:
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt StateMachineLogGroup.Arn
+        IncludeExecutionData: true
+        Level: ALL
+      RoleArn: !GetAtt StateMachineRole.Arn
+      StateMachineName: Remembrall-State-Machine
+      StateMachineType: STANDARD
+  StateMachineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: StateMachineLogGroup
 Outputs:
   WebsiteUrl:
     Description: Website Url

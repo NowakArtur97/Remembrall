@@ -13,17 +13,17 @@
       "Choices": [
         {
           "Next": "EmailOnlyState",
-          "Variable": "$.preference",
+          "Variable": "$.notificationType",
           "StringEquals": "email"
         },
         {
           "Next": "SMSOnlyState",
-          "Variable": "$.preference",
+          "Variable": "$.notificationType",
           "StringEquals": "sms"
         },
         {
           "Next": "EmailAndSMSState",
-          "Variable": "$.preference",
+          "Variable": "$.notificationType",
           "StringEquals": "both"
         }
       ]
@@ -33,7 +33,7 @@
       "Next": "EndState",
       "Resource": "arn:aws:states:::lambda:invoke",
       "Parameters": {
-        "FunctionName": "",
+        "FunctionName": "${EmailSenderLambdaFunction.Arn}",
         "Payload": {
           "Input.$": "$"
         }
@@ -47,7 +47,7 @@
         "Message": {
           "Input.$": "$.message"
         },
-        "PhoneNumber": "+"
+        "PhoneNumber": "$.phoneNumber"
       }
     },
     "EmailAndSMSState": {
@@ -64,7 +64,7 @@
                 "Payload": {
                   "Input.$": "$"
                 },
-                "FunctionName": ""
+                "FunctionName": "${EmailSenderLambdaFunction.Arn}"
               },
               "End": true
             }
@@ -80,7 +80,7 @@
                 "Message": {
                   "Input.$": "$.message"
                 },
-                "PhoneNumber": "+"
+                "PhoneNumber": "$.phoneNumber"
               },
               "End": true
             }
