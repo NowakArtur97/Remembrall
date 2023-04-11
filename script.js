@@ -4,6 +4,7 @@ const API = `${API_GATEWAY}/remembrall`;
 let messageInput;
 let timeDelayInput;
 let emailInput;
+let phoneNumberInput;
 let notificationOptionButtons;
 let form;
 
@@ -11,6 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
   messageInput = document.querySelector("#message");
   timeDelayInput = document.querySelector("#time_delay");
   emailInput = document.querySelector("#email");
+  phoneNumberInput = document.querySelector("#phone_number");
   notificationOptionButtons = document.querySelectorAll(".form__button");
   form = document.querySelector(".form");
 
@@ -42,8 +44,9 @@ function sendData(e, notificationType) {
   const body = JSON.stringify({
     message: messageInput.value,
     timeDelay: timeDelayInput.value,
-    option: notificationType,
+    notificationType,
     email: emailInput.value,
+    phoneNumber: phoneNumberInput.value,
   });
   clearForm();
   console.log(body);
