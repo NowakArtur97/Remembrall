@@ -16,7 +16,7 @@ def send_email(input):
             "Body": {"Text": {"Data": message}},
         },
     )
-    print('Message: [' + message + '] sent successfully to: ' + recipient)
+    print('Message: [' + message + '] successfully sent to: ' + recipient)
 
 def lambda_handler(event, context):
     attachment = {}

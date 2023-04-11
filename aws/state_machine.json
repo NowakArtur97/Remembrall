@@ -44,10 +44,8 @@
       "Next": "EndState",
       "Resource": "arn:aws:states:::sns:publish",
       "Parameters": {
-        "Message": {
-          "Input.$": "$.message"
-        },
-        "PhoneNumber": "$.phoneNumber"
+        "Message.$": "$.message",
+        "PhoneNumber.$": "$.phoneNumber"
       }
     },
     "EmailAndSMSState": {
@@ -77,10 +75,8 @@
               "Type": "Task",
               "Resource": "arn:aws:states:::sns:publish",
               "Parameters": {
-                "Message": {
-                  "Input.$": "$.message"
-                },
-                "PhoneNumber": "$.phoneNumber"
+                "Message.$": "$.message",
+                "PhoneNumber.$": "$.phoneNumber"
               },
               "End": true
             }

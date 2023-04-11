@@ -86,6 +86,6 @@ function cleanRequiredAttributes() {
 function clearForm() {
   messageInput.value = "Notification message";
   emailInput.value = "email@email.com";
-  phoneNumberInput.value = "+48 XXX XXX XXX";
+  phoneNumberInput.value = "+48XXXXXXXXX";
   timeDelayInput.value = "15";
 }

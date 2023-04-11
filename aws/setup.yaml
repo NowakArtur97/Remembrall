@@ -662,6 +662,16 @@ Resources:
                 Action:
                   - ses:SendEmail
                 Resource: "*"
+        - PolicyName: LogPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
   EmailSenderLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -693,7 +703,7 @@ Resources:
                       "Body": {"Text": {"Data": message}},
                   },
               )
-              print('Message: [' + message + '] sent successfully to: ' + recipient)
+              print('Message: [' + message + '] successfully sent to: ' + recipient)
 
           def lambda_handler(event, context):
               attachment = {}
@@ -794,10 +804,8 @@ Resources:
               "Next": "EndState",
               "Resource": "arn:aws:states:::sns:publish",
               "Parameters": {
-                "Message": {
-                  "Input.$": "$.message"
-                },
-                "PhoneNumber": "$.phoneNumber"
+                "Message.$": "$.message",
+                "PhoneNumber.$": "$.phoneNumber"
               }
             },
             "EmailAndSMSState": {
@@ -827,10 +835,8 @@ Resources:
                       "Type": "Task",
                       "Resource": "arn:aws:states:::sns:publish",
                       "Parameters": {
-                        "Message": {
-                          "Input.$": "$.message"
-                        },
-                        "PhoneNumber": "$.phoneNumber"
+                        "Message.$": "$.message",
+                        "PhoneNumber.$": "$.phoneNumber"
                       },
                       "End": true
                     }
