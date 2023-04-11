@@ -29,14 +29,16 @@ function validateDelayTime() {
     const value = parseInt(this.value);
     if (value < 1) {
       this.value = 1;
-    } else if (value > 50) {
-      this.value = 60;
+    } else if (value > 3600) {
+      this.value = 3600;
     }
   };
 }
 
 function sendData(e, notificationType) {
   e.preventDefault();
+  cleanRequiredAttributes();
+  setRequiredAttributesBasedOnNotificationType(notificationType);
   form.reportValidity();
   if (!form.checkValidity()) {
     return;
@@ -63,8 +65,27 @@ function sendData(e, notificationType) {
     .catch((err) => console.log(err.toString()));
 }
 
+function setRequiredAttributesBasedOnNotificationType(notificationType) {
+  if (notificationType === "email") {
+    emailInput.required = true;
+  }
+  if (notificationType === "sms") {
+    phoneNumberInput.required = true;
+  }
+  if (notificationType === "both") {
+    emailInput.required = true;
+    phoneNumberInput.required = true;
+  }
+}
+
+function cleanRequiredAttributes() {
+  emailInput.required = false;
+  phoneNumberInput.required = false;
+}
+
 function clearForm() {
   messageInput.value = "Notification message";
   emailInput.value = "email@email.com";
+  phoneNumberInput.value = "+48 XXX XXX XXX";
   timeDelayInput.value = "15";
 }
