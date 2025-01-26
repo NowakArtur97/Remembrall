@@ -93,7 +93,7 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DependencyToS3Bucket
-          URL: https://raw.githubusercontent.com/NowakArtur97/Remembrall/master/aws/dependencies.zip
+          URL: https://raw.githubusercontent.com/NowakArtur97/Remembrall/main/aws/dependencies.zip
       Code:
         ZipFile: |
           import os
@@ -248,7 +248,7 @@ Resources:
           REPOSITORY_URL: https://github.com/NowakArtur97/Remembrall
           IGNORED_FILES_AND_FOLDERS: aws
           IGNORED_EXTENSIONS: md
-          BRANCH: master
+          BRANCH: main
       Code:
         ZipFile: |
           import os
